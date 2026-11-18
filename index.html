@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AevumGuard — Non-Custodial tUSD8 Guardrails for AI Agents</title>
+  <script src="https://jsdelivr.net"></script>
+  <style>
+    :root { --bg: #0b0f19; --card: #131a2a; --border: #23304d; --accent: #38bdf8; --ok: #22c55e; --danger: #ef4444; --text: #f1f5f9; --muted: #94a3b8; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; line-height: 1.5; }
+    .wrap { max-width: 880px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { font-size: 1.4rem; margin: 0; color: var(--accent); }
+    .sub { font-size: 0.85rem; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .card h2 { margin-top: 0; font-size: 1.05rem; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    label { display: block; font-size: 0.82rem; color: var(--muted); margin: 10px 0 4px; }
+    input { width: 100%; box-sizing: border-box; background: #090d16; border: 1px solid var(--border); color: var(--text); padding: 9px 11px; border-radius: 8px; font-family: monospace; font-size: 0.85rem; }
+    button { background: var(--accent); color: #04101f; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 12px; width: 100%; }
+    button:hover { opacity: 0.92; }
+    button.danger { background: var(--danger); color: #fff; }
+    button.secondary { background: #1e293b; color: var(--text); border: 1px solid var(--border); }
+    .pill { display: inline-block; background: #1e293b; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; font-family: monospace; }
+    #log { background: #060911; border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 20px; font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; color: #cbd5e1; max-height: 220px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🛡️ AevumGuard — AI Agent tUSD8 Payment Guardrails</h1>
+      <div class="sub">Non-Custodial Spending Caps, Session Expiration & Merchant Allowlists on QDay Aevum Testnet (Chain ID 44005)</div>
+    </div>
+    <div style="min-width: 200px;">
+      <button id="connectBtn" style="margin:0;">Connect MetaMask</button>
+    </div>
+  </header>
+
+  <div style="margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 8px;">
+    <span class="pill">Guard: 0xc83B216791017805FC35a1ECfc85712c8994EEEF</span>
+    <span class="pill">tUSD8: 0x456569838f1d43009A91ebA4263147Afd7233483</span>
+    <span class="pill" id="walletPill">Wallet: Not Connected</span>
+    <span class="pill" id="balPill">tUSD8 Balance: —</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1. Approve tUSD8 & Create Agent Session</h2>
+      <label>Approve Allowance (tUSD8)</label>
+      <input id="approveAmt" value="3.00" />
+      <button class="secondary" id="approveBtn">Step 1A: Approve tUSD8 for Guard</button>
+
+      <label>Authorized AI Agent Address</label>
+      <input id="agentAddr" placeholder="0x..." />
+      <label>Max Per-Transaction Cap (tUSD8)</label>
+      <input id="maxTx" value="1.00" />
+      <label>Total Session Budget (tUSD8)</label>
+      <input id="totBudget" value="3.00" />
+      <label>Session Duration (Seconds)</label>
+      <input id="durSec" value="86400" />
+      <label>Allowed Merchant Address</label>
+      <input id="merchantAddr" value="0x000000000000000000000000000000000000dEaD" />
+      <button id="createBtn">Step 1B: Create Guarded Session</button>
+    </div>
+
+    <div class="card">
+      <h2>2. Execute Guarded AI Payment & Kill-Switch</h2>
+      <label>Session ID</label>
+      <input id="paySessionId" value="1" />
+      <label>Merchant Recipient Address</label>
+      <input id="payMerchant" value="0x000000000000000000000000000000000000dEaD" />
+      <label>Payment Amount (tUSD8 — tries per-tx cap)</label>
+      <input id="payAmt" value="0.50" />
+      <label>Invoice / Task Reference</label>
+      <input id="invoiceRef" value="INV-2026-AI-COMPUTE-01" />
+      <button id="payBtn">Execute Guarded tUSD8 Payment</button>
+
+      <hr style="border-color: var(--border); margin: 18px 0;" />
+      <label>Emergency Kill-Switch (Owner Only)</label>
+      <button class="danger" id="revokeBtn">Instant Revoke Session</button>
+    </div>
+  </div>
+
+  <div id="log">Ready. Connect MetaMask on QDay Aevum Testnet (Chain ID 44005)...</div>
+</div>
+
+<script>
+  const GUARD_ADDR = "0xc83B216791017805FC35a1ECfc85712c8994EEEF";
+  const TUSD8_ADDR = "0x456569838f1d43009A91ebA4263147Afd7233483";
+  const CHAIN_HEX = "0xabe5"; // 44005
+
+  const GUARD_ABI = [
+    "function createSession(address agent, uint256 maxPerTx, uint256 totalBudget, uint64 durationSeconds, address[] merchants) external returns (uint256)",
+    "function executeAgentPayment(uint256 sessionId, address merchant, uint256 amount, string invoiceRef) external",
+    "function revokeSession(uint256 sessionId) external",
+    "function nextSessionId() view returns (uint256)"
+  ];
+  const ERC20_ABI = [
+    "function approve(address spender, uint256 amount) external returns (bool)",
+    "function balanceOf(address owner) view returns (uint256)"
+  ];
+
+  let provider, signer, userAddr, guard, tusd8;
+  const log = (msg) => {
+    const el = document.getElementById("log");
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent;
+  };
+
+  async function refreshBalance() {
+    if (!tusd8 || !userAddr) return;
+    const raw = await tusd8.balanceOf(userAddr);
+    document.getElementById("balPill").textContent = `tUSD8 Balance: ${ethers.formatUnits(raw, 6)} tUSD8`;
+  }
+
+  document.getElementById("connectBtn").onclick = async () => {
+    try {
+      if (!window.ethereum) return alert("Please install MetaMask.");
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      try {
+        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] });
+      } catch (e) {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{ chainId: CHAIN_HEX, chainName: "QDay Aevum Testnet", rpcUrls: ["https://qday.info"], nativeCurrency: { name: "tQDAY", symbol: "tQDAY", decimals: 18 } }]
+        });
+      }
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+      userAddr = await signer.getAddress();
+      guard = new ethers.Contract(GUARD_ADDR, GUARD_ABI, signer);
+      tusd8 = new ethers.Contract(TUSD8_ADDR, ERC20_ABI, signer);
+
+      document.getElementById("walletPill").textContent = `Wallet: ${userAddr.slice(0,6)}...${userAddr.slice(-4)}`;
+      document.getElementById("agentAddr").value = userAddr;
+      await refreshBalance();
+      log(`Connected: ${userAddr}`);
+    } catch (err) {
+      log(`Error: ${err.message}`);
+    }
+  };
+
+  document.getElementById("approveBtn").onclick = async () => {
+    try {
+      const amt = ethers.parseUnits(document.getElementById("approveAmt").value, 6);
+      log("Sending tUSD8 approve transaction...");
+      const tx = await tusd8.approve(GUARD_ADDR, amt);
+      await tx.wait();
+      log(`Approved! Tx: ${tx.hash}`);
+    } catch (err) { log(`Approve Error: ${err.reason || err.message}`); }
+  };
+
+  document.getElementById("createBtn").onclick = async () => {
+    try {
+      const agent = document.getElementById("agentAddr").value.trim();
+      const maxTx = ethers.parseUnits(document.getElementById("maxTx").value, 6);
+      const tot = ethers.parseUnits(document.getElementById("totBudget").value, 6);
+      const dur = BigInt(document.getElementById("durSec").value);
+      const merch = document.getElementById("merchantAddr").value.trim();
+      log("Creating guarded session...");
+      const tx = await guard.createSession(agent, maxTx, tot, dur, [merch]);
+      await tx.wait();
+      const nextId = await guard.nextSessionId();
+      const createdId = Number(nextId) - 1;
+      document.getElementById("paySessionId").value = createdId;
+      log(`Session #${createdId} Created! Tx: ${tx.hash}`);
+    } catch (err) { log(`Session Error: ${err.reason || err.message}`); }
+  };
+
+  document.getElementById("payBtn").onclick = async () => {
+    try {
+      const sid = BigInt(document.getElementById("paySessionId").value);
+      const merch = document.getElementById("payMerchant").value.trim();
+      const amt = ethers.parseUnits(document.getElementById("payAmt").value, 6);
+      const ref = document.getElementById("invoiceRef").value.trim();
+      log(`Executing guarded payment of ${document.getElementById("payAmt").value} tUSD8...`);
+      const tx = await guard.executeAgentPayment(sid, merch, amt, ref);
+      await tx.wait();
+      await refreshBalance();
+      log(`Payment Settled! Tx: ${tx.hash}`);
+    } catch (err) { log(`Guard Blocked / Error: ${err.reason || err.message}`); }
+  };
+
+  document.getElementById("revokeBtn").onclick = async () => {
+    try {
+      const sid = BigInt(document.getElementById("paySessionId").value);
+      log(`Revoking Session #${sid}...`);
+      const tx = await guard.revokeSession(sid);
+      await tx.wait();
+      log(`Session #${sid} Revoked! Tx: ${tx.hash}`);
+    } catch (err) { log(`Revoke Error: ${err.reason || err.message}`); }
+  };
+</script>
+</body>
+</html>
