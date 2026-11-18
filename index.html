@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AevumGuard — Non-Custodial tUSD8 Guardrails for AI Agents</title>
-  <script src="https://jsdelivr.net"></script>
   <style>
     :root { --bg: #0b0f19; --card: #131a2a; --border: #23304d; --accent: #38bdf8; --ok: #22c55e; --danger: #ef4444; --text: #f1f5f9; --muted: #94a3b8; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; line-height: 1.5; }
@@ -22,7 +21,7 @@
     button.danger { background: var(--danger); color: #fff; }
     button.secondary { background: #1e293b; color: var(--text); border: 1px solid var(--border); }
     .pill { display: inline-block; background: #1e293b; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; font-family: monospace; }
-    #log { background: #060911; border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 20px; font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; color: #cbd5e1; max-height: 220px; overflow-y: auto; }
+    #log { background: #060911; border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 20px; font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; color: #cbd5e1; max-height: 240px; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -82,41 +81,66 @@
     </div>
   </div>
 
-  <div id="log">Ready. Connect MetaMask on QDay Aevum Testnet (Chain ID 44005)...</div>
+  <div id="log">Ready. Click Connect MetaMask on QDay Aevum Testnet (Chain ID 44005)...</div>
 </div>
 
 <script>
-  const GUARD_ADDR = "0xc83B216791017805FC35a1ECfc85712c8994EEEF";
-  const TUSD8_ADDR = "0x456569838f1d43009A91ebA4263147Afd7233483";
-  const CHAIN_HEX = "0xabe5"; // 44005
+  const GUARD = "0xc83B216791017805FC35a1ECfc85712c8994EEEF";
+  const TUSD8 = "0x456569838f1d43009A91ebA4263147Afd7233483";
+  const CHAIN_HEX = "0xabe5";
+  let user = null;
 
-  const GUARD_ABI = [
-    "function createSession(address agent, uint256 maxPerTx, uint256 totalBudget, uint64 durationSeconds, address[] merchants) external returns (uint256)",
-    "function executeAgentPayment(uint256 sessionId, address merchant, uint256 amount, string invoiceRef) external",
-    "function revokeSession(uint256 sessionId) external",
-    "function nextSessionId() view returns (uint256)"
-  ];
-  const ERC20_ABI = [
-    "function approve(address spender, uint256 amount) external returns (bool)",
-    "function balanceOf(address owner) view returns (uint256)"
-  ];
-
-  let provider, signer, userAddr, guard, tusd8;
   const log = (msg) => {
     const el = document.getElementById("log");
-    el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent;
+    el.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg + "\n" + el.textContent;
   };
 
+  const padAddr = (a) => a.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const padUint = (n) => BigInt(n).toString(16).padStart(64, "0");
+  const toUnits6 = (val) => {
+    const parts = String(val).trim().split(".");
+    const w = parts || "0";
+    const f = parts || "";
+    return BigInt(w) * 1000000n + BigInt((f + "000000").slice(0, 6));
+  };
+  const encodeStr = (s) => {
+    const bytes = new TextEncoder().encode(s);
+    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+    const padded = hex.padEnd(Math.ceil(hex.length / 64) * 64 || 64, "0");
+    return padUint(bytes.length) + padded;
+  };
+
+  async function waitReceipt(hash) {
+    for (let i = 0; i < 40; i++) {
+      const r = await window.ethereum.request({ method: "eth_getTransactionReceipt", params: [hash] });
+      if (r) return r;
+      await new Promise(res => setTimeout(res, 1500));
+    }
+    throw new Error("Transaction confirmation timeout");
+  }
+
   async function refreshBalance() {
-    if (!tusd8 || !userAddr) return;
-    const raw = await tusd8.balanceOf(userAddr);
-    document.getElementById("balPill").textContent = `tUSD8 Balance: ${ethers.formatUnits(raw, 6)} tUSD8`;
+    if (!user) return;
+    const data = "0x70a08231" + padAddr(user);
+    const res = await window.ethereum.request({ method: "eth_call", params: [{ to: TUSD8, data: data }, "latest"] });
+    const raw = BigInt(res || "0x0");
+    const whole = raw / 1000000n;
+    const frac = String(raw % 1000000n).padStart(6, "0").replace(/0+$/, "") || "0";
+    document.getElementById("balPill").textContent = "tUSD8 Balance: " + whole + "." + frac + " tUSD8";
+  }
+
+  async function refreshNextSessionId() {
+    const res = await window.ethereum.request({ method: "eth_call", params: [{ to: GUARD, data: "0x802a9060" }, "latest"] });
+    if (res && res !== "0x") {
+      const next = Number(BigInt(res));
+      if (next > 1) document.getElementById("paySessionId").value = next - 1;
+    }
   }
 
   document.getElementById("connectBtn").onclick = async () => {
     try {
-      if (!window.ethereum) return alert("Please install MetaMask.");
-      await window.ethereum.request({ method: "eth_requestAccounts" });
+      if (!window.ethereum) return alert("MetaMask not found in browser.");
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
       try {
         await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] });
       } catch (e) {
@@ -125,71 +149,70 @@
           params: [{ chainId: CHAIN_HEX, chainName: "QDay Aevum Testnet", rpcUrls: ["https://qday.info"], nativeCurrency: { name: "tQDAY", symbol: "tQDAY", decimals: 18 } }]
         });
       }
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer = await provider.getSigner();
-      userAddr = await signer.getAddress();
-      guard = new ethers.Contract(GUARD_ADDR, GUARD_ABI, signer);
-      tusd8 = new ethers.Contract(TUSD8_ADDR, ERC20_ABI, signer);
-
-      document.getElementById("walletPill").textContent = `Wallet: ${userAddr.slice(0,6)}...${userAddr.slice(-4)}`;
-      document.getElementById("agentAddr").value = userAddr;
+      user = accounts;
+      document.getElementById("walletPill").textContent = "Wallet: " + user.slice(0,6) + "..." + user.slice(-4);
+      document.getElementById("agentAddr").value = user;
       await refreshBalance();
-      log(`Connected: ${userAddr}`);
-    } catch (err) {
-      log(`Error: ${err.message}`);
-    }
+      await refreshNextSessionId();
+      log("Connected: " + user);
+    } catch (err) { log("Connect Error: " + err.message); }
   };
 
   document.getElementById("approveBtn").onclick = async () => {
     try {
-      const amt = ethers.parseUnits(document.getElementById("approveAmt").value, 6);
-      log("Sending tUSD8 approve transaction...");
-      const tx = await tusd8.approve(GUARD_ADDR, amt);
-      await tx.wait();
-      log(`Approved! Tx: ${tx.hash}`);
-    } catch (err) { log(`Approve Error: ${err.reason || err.message}`); }
+      if (!user) return log("Please click Connect MetaMask first.");
+      const amt = toUnits6(document.getElementById("approveAmt").value);
+      const data = "0x095ea7b3" + padAddr(GUARD) + padUint(amt);
+      log("Confirm tUSD8 approve in MetaMask...");
+      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: TUSD8, data: data }] });
+      log("Pending Approve Tx: " + hash);
+      await waitReceipt(hash);
+      log("Approved! Tx: " + hash);
+    } catch (err) { log("Approve Error: " + err.message); }
   };
 
   document.getElementById("createBtn").onclick = async () => {
     try {
+      if (!user) return log("Please click Connect MetaMask first.");
       const agent = document.getElementById("agentAddr").value.trim();
-      const maxTx = ethers.parseUnits(document.getElementById("maxTx").value, 6);
-      const tot = ethers.parseUnits(document.getElementById("totBudget").value, 6);
+      const maxTx = toUnits6(document.getElementById("maxTx").value);
+      const tot = toUnits6(document.getElementById("totBudget").value);
       const dur = BigInt(document.getElementById("durSec").value);
       const merch = document.getElementById("merchantAddr").value.trim();
-      log("Creating guarded session...");
-      const tx = await guard.createSession(agent, maxTx, tot, dur, [merch]);
-      await tx.wait();
-      const nextId = await guard.nextSessionId();
-      const createdId = Number(nextId) - 1;
-      document.getElementById("paySessionId").value = createdId;
-      log(`Session #${createdId} Created! Tx: ${tx.hash}`);
-    } catch (err) { log(`Session Error: ${err.reason || err.message}`); }
+      const data = "0x71b3222b" + padAddr(agent) + padUint(maxTx) + padUint(tot) + padUint(dur) + padUint(0xa0) + padUint(1) + padAddr(merch);
+      log("Confirm createSession in MetaMask...");
+      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: GUARD, data: data }] });
+      log("Pending Session Tx: " + hash);
+      await waitReceipt(hash);
+      await refreshNextSessionId();
+      log("Session Created! Tx: " + hash);
+    } catch (err) { log("Session Error: " + err.message); }
   };
 
   document.getElementById("payBtn").onclick = async () => {
     try {
+      if (!user) return log("Please click Connect MetaMask first.");
       const sid = BigInt(document.getElementById("paySessionId").value);
-      const merch = document.getElementById("payMerchant").value.trim();
-      const amt = ethers.parseUnits(document.getElementById("payAmt").value, 6);
-      const ref = document.getElementById("invoiceRef").value.trim();
-      log(`Executing guarded payment of ${document.getElementById("payAmt").value} tUSD8...`);
-      const tx = await guard.executeAgentPayment(sid, merch, amt, ref);
-      await tx.wait();
-      await refreshBalance();
-      log(`Payment Settled! Tx: ${tx.hash}`);
-    } catch (err) { log(`Guard Blocked / Error: ${err.reason || err.message}`); }
-  };
-
-  document.getElementById("revokeBtn").onclick = async () => {
-    try {
-      const sid = BigInt(document.getElementById("paySessionId").value);
-      log(`Revoking Session #${sid}...`);
-      const tx = await guard.revokeSession(sid);
-      await tx.wait();
-      log(`Session #${sid} Revoked! Tx: ${tx.hash}`);
-    } catch (err) { log(`Revoke Error: ${err.reason || err.message}`); }
-  };
-</script>
-</body>
-</html>
+const merch = document.getElementById("payMerchant").value.trim();
+const amt = toUnits6(document.getElementById("payAmt").value);
+const ref = document.getElementById("invoiceRef").value.trim();
+const data = "0x26881690" + padUint(sid) + padAddr(merch) + padUint(amt) + padUint(0x80) + encodeStr(ref);
+log("Confirm guarded payment of " + document.getElementById("payAmt").value + " tUSD8 in MetaMask...");
+const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: GUARD, data: data }] });
+log("Pending Payment Tx: " + hash);
+await waitReceipt(hash);
+await refreshBalance();
+log("Payment Settled! Tx: " + hash);
+} catch (err) { log("Payment Error: " + err.message); }
+};
+document.getElementById("revokeBtn").onclick = async () => {
+try {
+if (!user) return log("Please click Connect MetaMask first.");
+const sid = BigInt(document.getElementById("paySessionId").value);
+const data = "0x45804f3f" + padUint(sid);
+log("Confirm revokeSession #" + sid + " in MetaMask...");
+const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: GUARD, data: data }] });
+await waitReceipt(hash);
+log("Session #" + sid + " Revoked! Tx: " + hash);
+} catch (err) { log("Revoke Error: " + err.message); }
+};
