@@ -95,12 +95,12 @@
     el.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg + "\n" + el.textContent;
   };
 
-  const padAddr = (a) => a.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const padAddr = (a) => String(a).toLowerCase().replace(/^0x/, "").padStart(64, "0");
   const padUint = (n) => BigInt(n).toString(16).padStart(64, "0");
   const toUnits6 = (val) => {
     const parts = String(val).trim().split(".");
-    const w = parts || "0";
-    const f = parts || "";
+    const w = parts.at(0) || "0";
+    const f = parts.at(1) || "";
     return BigInt(w) * 1000000n + BigInt((f + "000000").slice(0, 6));
   };
   const encodeStr = (s) => {
@@ -112,7 +112,7 @@
 
   async function waitReceipt(hash) {
     for (let i = 0; i < 40; i++) {
-      const r = await window.ethereum.request({ method: "eth_getTransactionReceipt", params: [hash] });
+      const r = await window.ethereum.request({ method: "eth_getTransactionReceipt", params: Array.of(hash) });
       if (r) return r;
       await new Promise(res => setTimeout(res, 1500));
     }
@@ -122,7 +122,7 @@
   async function refreshBalance() {
     if (!user) return;
     const data = "0x70a08231" + padAddr(user);
-    const res = await window.ethereum.request({ method: "eth_call", params: [{ to: TUSD8, data: data }, "latest"] });
+    const res = await window.ethereum.request({ method: "eth_call", params: Array.of({ to: TUSD8, data: data }, "latest") });
     const raw = BigInt(res || "0x0");
     const whole = raw / 1000000n;
     const frac = String(raw % 1000000n).padStart(6, "0").replace(/0+$/, "") || "0";
@@ -130,7 +130,7 @@
   }
 
   async function refreshNextSessionId() {
-    const res = await window.ethereum.request({ method: "eth_call", params: [{ to: GUARD, data: "0x802a9060" }, "latest"] });
+    const res = await window.ethereum.request({ method: "eth_call", params: Array.of({ to: GUARD, data: "0x802a9060" }, "latest") });
     if (res && res !== "0x") {
       const next = Number(BigInt(res));
       if (next > 1) document.getElementById("paySessionId").value = next - 1;
@@ -142,14 +142,14 @@
       if (!window.ethereum) return alert("MetaMask not found in browser.");
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
       try {
-        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] });
+        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: Array.of({ chainId: CHAIN_HEX }) });
       } catch (e) {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
-          params: [{ chainId: CHAIN_HEX, chainName: "QDay Aevum Testnet", rpcUrls: ["https://qday.info"], nativeCurrency: { name: "tQDAY", symbol: "tQDAY", decimals: 18 } }]
+          params: Array.of({ chainId: CHAIN_HEX, chainName: "QDay Aevum Testnet", rpcUrls: Array.of("https://qday.info"), nativeCurrency: { name: "tQDAY", symbol: "tQDAY", decimals: 18 } })
         });
       }
-      user = accounts;
+      user = accounts.at(0);
       document.getElementById("walletPill").textContent = "Wallet: " + user.slice(0,6) + "..." + user.slice(-4);
       document.getElementById("agentAddr").value = user;
       await refreshBalance();
@@ -164,7 +164,7 @@
       const amt = toUnits6(document.getElementById("approveAmt").value);
       const data = "0x095ea7b3" + padAddr(GUARD) + padUint(amt);
       log("Confirm tUSD8 approve in MetaMask...");
-      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: TUSD8, data: data }] });
+      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: Array.of({ from: user, to: TUSD8, data: data }) });
       log("Pending Approve Tx: " + hash);
       await waitReceipt(hash);
       log("Approved! Tx: " + hash);
@@ -181,7 +181,7 @@
       const merch = document.getElementById("merchantAddr").value.trim();
       const data = "0x71b3222b" + padAddr(agent) + padUint(maxTx) + padUint(tot) + padUint(dur) + padUint(0xa0) + padUint(1) + padAddr(merch);
       log("Confirm createSession in MetaMask...");
-      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: GUARD, data: data }] });
+      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: Array.of({ from: user, to: GUARD, data: data }) });
       log("Pending Session Tx: " + hash);
       await waitReceipt(hash);
       await refreshNextSessionId();
@@ -198,7 +198,7 @@ const amt = toUnits6(document.getElementById("payAmt").value);
 const ref = document.getElementById("invoiceRef").value.trim();
 const data = "0x26881690" + padUint(sid) + padAddr(merch) + padUint(amt) + padUint(0x80) + encodeStr(ref);
 log("Confirm guarded payment of " + document.getElementById("payAmt").value + " tUSD8 in MetaMask...");
-const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: GUARD, data: data }] });
+const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: Array.of({ from: user, to: GUARD, data: data }) });
 log("Pending Payment Tx: " + hash);
 await waitReceipt(hash);
 await refreshBalance();
@@ -211,7 +211,7 @@ if (!user) return log("Please click Connect MetaMask first.");
 const sid = BigInt(document.getElementById("paySessionId").value);
 const data = "0x45804f3f" + padUint(sid);
 log("Confirm revokeSession #" + sid + " in MetaMask...");
-const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: user, to: GUARD, data: data }] });
+const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: Array.of({ from: user, to: GUARD, data: data }) });
 await waitReceipt(hash);
 log("Session #" + sid + " Revoked! Tx: " + hash);
 } catch (err) { log("Revoke Error: " + err.message); }
